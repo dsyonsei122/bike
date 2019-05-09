@@ -1,0 +1,67 @@
+---
+title: "bike_visualize"
+author: "cwkim"
+date: "2019년 5월 3일"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+#대여소 정보를 불러옵니다
+```{r}
+setwd("C:\\Users\\cwjen_000\\Desktop\\ds프로젝트")
+Sys.setlocale("LC_ALL", locale='C')
+
+rentshop <- read.csv("서울특별시 공공자전거 대여소 정보.csv")
+
+Sys.setlocale("LC_ALL", "korean")
+head(rentshop)
+
+```
+#변수 이름을 재설정 해줍니다.
+```{r}
+names(rentshop) <- c("구명"	,"대여소ID"	,"대여소번호",	"대여소명"	,"대여소 주소",	"거치대수",	"위도"	,"경도")
+head(rentshop)
+```
+
+#시각화를 하겠습니다
+```{r}
+library('ggmap')
+addr <- rentshop$`대여소 주소`
+addr<-as.character(addr)
+
+names<- rentshop$대여소명
+
+df <- data.frame(name=names,
+                 lon=rentshop$위도,
+                 lat=rentshop$경도)
+
+cen <- c(mean(rentshop$경도),mean(rentshop$위도))
+
+#전체 시각화 과정입니다.
+# gc <- geocode(addr, encoding="euc-kr")
+# 
+# register_google(key="AIzaSyDEPCqJPA4i5iE_kj2bJJHLHAAKemJQKFc")
+# map <- get_googlemap(center=cen,
+#                      maptype="roadmap",
+#                      zoom=12,
+#                      marker=gc,
+#                      size=c(640,640))
+# ggmap(map)
+
+#시간이 오래 걸리므로 일부 시각화만 진행합니다. 성공!
+addr_part <- addr[1:20]
+gc_part <- geocode(addr_part, encoding="euc-kr")
+register_google(key="AIzaSyDEPCqJPA4i5iE_kj2bJJHLHAAKemJQKFc")
+map_part <- get_googlemap(center=cen,
+                     maptype="roadmap",
+                     zoom=12,
+                     markers=gc_part,
+                     size=c(640,640))
+ggmap(map_part)
+
+```
+
