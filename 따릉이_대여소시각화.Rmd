@@ -44,7 +44,7 @@ cen <- c(mean(rentshop$경도),mean(rentshop$위도))
 #전체 시각화 과정입니다.
 # gc <- geocode(addr, encoding="euc-kr")
 # 
-# register_google(key="AIzaSyDEPCqJPA4i5iE_kj2bJJHLHAAKemJQKFc")
+# register_google(key="본인의 api 키를 ")
 # map <- get_googlemap(center=cen,
 #                      maptype="roadmap",
 #                      zoom=12,
@@ -55,7 +55,7 @@ cen <- c(mean(rentshop$경도),mean(rentshop$위도))
 #시간이 오래 걸리므로 일부 시각화만 진행합니다. 성공!
 addr_part <- addr[1:20]
 gc_part <- geocode(addr_part, encoding="euc-kr")
-register_google(key="AIzaSyDEPCqJPA4i5iE_kj2bJJHLHAAKemJQKFc")
+register_google(key="본인의 api 키를 입력합니다")
 map_part <- get_googlemap(center=cen,
                      maptype="roadmap",
                      zoom=12,
