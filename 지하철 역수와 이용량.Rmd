@@ -110,7 +110,7 @@ line2_df<-line2 %>% unique()
 #지도에 표시합니다
 library(ggmap)
 register_google(readline("Enter your api key> "))
-#register_google(key="AIzaSyDEPCqJPA4i5iE_kj2bJJHLHAAKemJQKFc")
+
 center <-c(mean(line2_df$`Y좌표(WGS)`), mean(line2_df$`X좌표(WGS)`))
 seoul <- get_map(center, zoom=11, maptype="roadmap")
 ggmap(seoul)
