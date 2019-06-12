@@ -1,0 +1,231 @@
+---
+author : 김채원
+title : 따릉이 일일수요량과 날씨
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+```
+
+
+대여이력 정보를 가져와보자
+```{r}
+library(tidyverse)
+setwd("C:\\Users\\cwjen_000\\Desktop\\ds프로젝트")
+
+Sys.setlocale("LC_ALL", "C")
+rentinfo<-read.csv("서울특별시 공공자전거 대여이력 정보_2018년_2분기_4.csv")
+Sys.setlocale("LC_ALL","korean")
+rentinfo<-as.data.frame(lapply(rentinfo, gsub, pattern = "\'", replacement = "", fixed = TRUE))
+names(rentinfo)<-c('날짜',	'대여시',	'대여대여소번호'	,'대여대여소명'	,'대여거치대',	'반납일시',	'반납대여소번호',	'반납대여소명',	'반납거치대',	'이용시간(분)',	'이용거리(M)')
+
+head(rentinfo)
+```
+
+
+
+
+# 따릉이 대여소별 이용량을 알아보자 
+```{r echo=TRUE}
+
+rentinfo %>% group_by(대여대여소명) %>% count(name='이용수') %>%arrange(desc(이용수))
+
+```
+
+# 반납 대여소 이용량을 알아보자
+```{r}
+rentinfo %>% group_by(반납대여소명) %>% count(name='이용수') %>%arrange(desc(이용수))
+```
+
+# 대여소가 어느 구에 있나 파악하자
+1) 대여소 정보 데이터를 불러옵니다
+```{r}
+
+Sys.setlocale("LC_ALL","C")
+rentloc <- read.csv("서울특별시 공공자전거 대여소 정보.csv")
+Sys.setlocale("LC_ALL","korean")
+names(rentloc)<-c('구명',	'대여소ID'	,'대여소번호'	,'대여소명',	'대여소 주소',	'거치대수',	'위도'	,'경도')
+head(rentloc)
+```
+
+ㅁㄴㅊㅌㅈㄷ`2) 대여소번호를 참조해 정류장이 있는 구를 새로운 변수로 줍니다
+```{r echo=TRUE}
+
+rentloc$대여소번호 <- as.factor(rentloc$대여소번호)
+
+rent<-left_join(rentinfo, rentloc[,c(1,3)], by=c("대여대여소번호"="대여소번호")) #에러뜨는 이유: rentloc에서 대여소 번호가 없는 경우(missing)가 있다. NA값으로 들어간다.
+head(rent)
+```
+
+3) 구별 대여소 이용량을 파악합니다(대여)
+```{r}
+rent_gu<-rentinfo %>% group_by(대여대여소번호, 대여대여소명) %>% count() %>%arrange(desc(n)) %>% left_join(rentloc[,c(1,3)], by=c("대여대여소번호"='대여소번호'))
+
+#NA값 확인-117개....하.....
+rent_gu[is.na(rent_gu$구명),]
+
+
+
+
+#구별 대여소 이용량
+rentUse_gu<-
+rent_gu %>% 
+  group_by(구명) %>% 
+  summarise(대여소이용량 = sum(n)) %>%
+  arrange(desc(대여소이용량)) %>% na.omit()
+
+
+
+
+```
+
+
+# 지하철역 위치 지도에 표시
+```{r}
+Sys.setlocale("LC_ALL","C")
+stn <- read.csv("서울시 역코드로 지하철역 위치 조회.csv")
+Sys.setlocale("LC_ALL","korean")
+names(stn) <-c('전철역코드'	,'전철역명',	'호선'	,'외부코드'	,'사이버스테이션',	'X좌표',	'Y좌표',	'X좌표(WGS)',	'Y좌표(WGS)')
+
+head(stn)
+
+# 필요한 정보만 stn_df로 저장합니다.
+stn_df <- stn[,c(2,3,8,9)]
+head(stn_df)
+
+
+#2호선만 일단 해보겠습니다
+line2<- stn_df %>% filter(호선=='2')
+str(line2)
+
+#상하행 둘 다 표시되므로 unique를 통해 새로운 데이터프레임을 만들어줍니다.
+line2_df<-line2 %>% unique()
+#수정전 line2 %>% filter(전철역명=='강남')
+#수정 후 line2_df %>% filter(전철역명=='강남')
+
+#지도에 표시합니다
+library(ggmap)
+register_google(readline("Enter your api key> "))
+#register_google(key="AIzaSyDEPCqJPA4i5iE_kj2bJJHLHAAKemJQKFc")
+center <-c(mean(line2_df$`Y좌표(WGS)`), mean(line2_df$`X좌표(WGS)`))
+seoul <- get_map(center, zoom=11, maptype="roadmap")
+ggmap(seoul)
+
+
+#2호선 포인트를 찍습니다.
+ggmap(seoul)+
+  geom_point(data=line2_df,
+             aes(x=`Y좌표(WGS)`, y=`X좌표(WGS)`),
+             size=2.5,
+             alpha=0.7,
+             col="darkgreen")
+
+#성공!
+```
+
+
+# 구에 지하철 역이 몇 개 있는지 파악합니다
+```{r}
+
+#역사정보는 2015년 기준입니다.
+stninfo<-read.csv("역주소및전화번호.csv")
+head(stninfo)
+
+# 서울시의 주소, 그리고 역명만 필요합니다.
+
+stninfo<-stninfo[str_detect(stninfo$주소, pattern="서울특별시"),]
+
+stninfo <- stninfo[,c(2,5)]
+head(stninfo)
+
+#regex로 구만 추출합니다.
+stninfo_gu<-data.frame(역명=stninfo$역명, 구명=str_extract(stninfo$주소, pattern="\\S{1,2}구|\\S{3}구")) #왜 NA가 생길까요
+
+stnNum_gu<-stninfo_gu %>% group_by(구명) %>% count(name="지하철 역 수") %>% arrange(desc(`지하철 역 수`))
+
+
+```
+
+
+# 지하철 역 수와 이용량 간의 상관관계는?
+```{r}
+rentUse_gu
+stnNum_gu
+
+All_gu <- inner_join(rentUse_gu, stnNum_gu, by="구명")
+cor_gu<- cor(All_gu[,c(2,3)], use="pairwise.complete.obs") #ㅅㅂ
+cor_gu
+
+#망함요.. 출구 개수나 이런걸로 해야할듯 상관관계가 0.5보다 낮습니다.
+
+```
+
+
+# 한강공원 수랑 상관관계는?
+```{r echo=TRUE}
+
+hangang<- read.csv("한강공원.csv")
+hangangNum_gu<-hangang %>% group_by(구명) %>% count(name="한강공원수")
+head(hangangNum_gu)
+
+#한강공원이 없는 구는 0 으로 처리해야해용
+hanganguse_gu<-right_join(hangangNum_gu,rent_gu, by="구명")
+#NA처리 
+temp<- as.matrix(hanganguse_gu$`한강공원수`)
+temp[is.na(temp)]<-0
+hanganguse_gu$한강공원수 <- temp
+
+
+cor_hangang <- cor(hanganguse_gu[,c(2,5)])
+cor_hangang
+# 교훈: 구로 하면 아무 소용이 없다.
+
+```
+
+# 지하철역 출구로 하자
+```{r}
+
+
+
+#대여소별 이용수 다시
+rentshop<-rentinfo %>% group_by(대여대여소명) %>% count(name='이용수') %>%arrange(desc(이용수))
+
+head(rentshop)
+
+one<-as.data.frame(rentshop$대여대여소명[str_detect(string=rentshop$`대여대여소명`, pattern="출구")])
+names(one)<-"대여대여소명"
+
+rentshopExit<-inner_join(one, rentshop, by="대여대여소명")
+head(rentshopUse)
+
+rentshopNoExit <- setdiff(rentshop, rentshopUse)
+
+
+Exit_all<-rentshop %>% mutate(역부근=ifelse(대여대여소명 %in% rentshopExit$대여대여소명, 1,0))
+
+Exit_all$역부근 <- as.factor(Exit_all$역부근)
+is(Exit_all$역부근)
+
+cor(Exit_all$이용수, Exit_all$역부근, use="pairwise.complete.obs")
+
+plot(Exit_all$역부근, Exit_all$이용수)
+
+
+
+by_stn <- Exit_all %>%group_by(역부근) %>%summarize(평균이용수=mean(이용수), 중간값이용수=median(이용수))
+  
+
+ggplot(by_stn, aes(x=역부근, y= 평균이용수))+geom_col()
+ggplot(by_stn, aes(x=역부근, y= 중간값이용수))+geom_col()
+
+
+#역 부근일 때 이용량이 평균, 그리고 중간값이 더 높다.
+Exit_all %>%group_by(역부근) %>% summarise(이용수합계=sum(이용수), 개수=length(이용수), 평균값=mean(이용수), 중간값=median(이용수), 최댓값=max(이용수))
+
+#역 부근 사용량이 전체 사용량의 33%차지.
+```
+
