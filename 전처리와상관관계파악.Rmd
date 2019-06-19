@@ -1,0 +1,296 @@
+---
+title="데이터전처리"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```
+
+
+대여이력 정보를 가져와보자
+```{r}
+library(tidyverse)
+setwd("C:\\Users\\cwjen_000\\Desktop\\ds프로젝트")
+
+Sys.setlocale("LC_ALL", "C")
+rentinfo<-read.csv("서울특별시 공공자전거 대여이력 정보_2018년_2분기_4.csv")
+Sys.setlocale("LC_ALL","korean")
+rentinfo<-as.data.frame(lapply(rentinfo, gsub, pattern = "\'", replacement = "", fixed = TRUE))
+names(rentinfo)<-c('날짜',	'대여시',	'대여대여소번호'	,'대여대여소명'	,'대여거치대',	'반납일시',	'반납대여소번호',	'반납대여소명',	'반납거치대',	'이용시간(분)',	'이용거리(M)')
+
+head(rentinfo)
+```
+
+
+
+
+# 따릉이 대여소별 이용량을 알아보자 
+```{r echo=TRUE}
+
+rentinfo %>% group_by(대여대여소명) %>% count(name='이용수') %>%arrange(desc(이용수))
+
+```
+
+
+# 대여소가 어느 구에 있나 파악하자
+1) 대여소 정보 데이터를 불러옵니다
+```{r}
+
+Sys.setlocale("LC_ALL","C")
+rentloc <- read.csv("서울특별시 공공자전거 대여소 정보.csv")
+Sys.setlocale("LC_ALL","korean")
+names(rentloc)<-c('구명',	'대여소ID'	,'대여소번호'	,'대여소명',	'대여소 주소',	'거치대수',	'위도'	,'경도')
+head(rentloc)
+
+```
+
+2) 대여소번호를 참조해 정류장이 있는 구를 새로운 변수로 줍니다
+```{r echo=TRUE}
+
+rentloc$대여소번호 <- as.factor(rentloc$대여소번호)
+
+rent<-left_join(rentinfo, rentloc[,c(1,3)], by=c("대여대여소번호"="대여소번호")) #에러뜨는 이유: rentloc에서 대여소 번호가 없는 경우(missing)가 있다. NA값으로 들어간다.
+head(rent)
+```
+
+3) 구별 대여소 이용량을 파악합니다(대여)
+```{r}
+rent_gu<-rentinfo %>% group_by(대여대여소번호, 대여대여소명) %>% count() %>%arrange(desc(n)) %>% left_join(rentloc[,c(1,3)], by=c("대여대여소번호"='대여소번호'))
+
+#NA값 확인-117개....하.....
+rent_gu[is.na(rent_gu$구명),]
+
+
+
+
+#구별 대여소 이용량
+rentUse_gu<-
+rent_gu %>% 
+  group_by(구명) %>% 
+  summarise(대여소이용량 = sum(n)) %>%
+  arrange(desc(대여소이용량)) %>% na.omit()
+
+
+names(rentUse_gu)<-c("구", "이용량")
+head(rentUse_gu)
+#최종데이터: rentUse_gu
+
+```
+
+
+
+# 구별 지하철 역 수
+```{r}
+
+#역사정보는 2015년 기준입니다.
+stninfo<-read.csv("역주소및전화번호.csv")
+head(stninfo)
+
+# 서울시의 주소, 그리고 역명만 필요합니다.
+
+stninfo<-stninfo[str_detect(stninfo$주소, pattern="서울특별시"),]
+
+stninfo <- stninfo[,c(2,5)]
+head(stninfo)
+
+#regex로 구만 추출합니다.
+stninfo_gu<-data.frame(역명=stninfo$역명, 구명=str_extract(stninfo$주소, pattern="\\S{1,2}구|\\S{3}구")) #왜 NA가 생길까요
+
+stnNum_gu<-stninfo_gu %>% group_by(구명) %>% count(name="지하철 역 수") %>% arrange(desc(`지하철 역 수`))
+names(stnNum_gu)[1]<- c("구")
+head(stnNum_gu)
+# 최종데이터: stnNum_gu
+```
+
+
+
+
+# 구별 공원 수
+```{r}
+Sys.setlocale("LC_ALL", "C")
+park <- read.csv('공원수.csv')
+Sys.setlocale("LC_ALL", "korean")
+
+
+park_gu<-park[,c(2,3,5)]
+park_gu <- park_gu[2:26,]
+names(park_gu) <- c("구", "공원수","공원총면적")
+head(park_gu)
+
+#vector로 변환
+park_gu$공원수 <- as.numeric(as.vector(park_gu$공원수))
+park_gu$공원총면적 <-as.vector(park_gu$공원총면적)
+park_gu$공원총면적<-as.numeric(gsub(",","",park_gu$공원총면적))
+
+
+head(park_gu)
+
+#최종데이터: park_gu
+
+```
+
+
+# 구별 자전거 도로 수
+```{r}
+
+# 구별 자전거 도로수
+Sys.setlocale("LC_ALL", "C")
+bikeroad <- read.csv('자전거도로.csv')
+Sys.setlocale("LC_ALL", "korean")
+head(bikeroad)
+
+
+bikeroad_gu <- bikeroad[ ,c(3,4,5)]
+bikeroad_gu <-bikeroad_gu[3:27,] 
+names(bikeroad_gu)<- c("구", "도로구간", "도로길이")
+head(bikeroad_gu)
+
+
+#최종데이터: bikeroad_gu
+
+```
+
+
+
+# 구별 학교 수
+```{r}
+school <- read.csv("행정구역별 설립별 학교수.csv")
+names(school)
+# 빈값 채우기
+school<-as.data.frame(lapply(school, gsub, pattern = "-", replacement = 0, fixed = TRUE))
+
+school_gu<- school %>% filter(시도=='서울')
+
+school_gu <- school_gu[,c(2,3,5,6,7,8)]
+head(school_gu)
+names(school_gu)<- c( names(school_gu)[1:5], "고등학교") 
+
+#factor로 인식되면 sum을 할 수 없으므로 vector로 바꿔줍니다
+school_gu[,3:6]<-lapply(school_gu[,3:6],as.vector)
+school_gu[,3:6]<-lapply(school_gu[,3:6],as.numeric)
+
+
+
+
+
+school_gu2<-school_gu[1:81,] %>% group_by(행정구역) %>% summarise(유치원수=sum(유치원), 초등학교수=sum(초등학교), 중학교수=sum(중학교), 고등학교수=sum(고등학교))
+
+school_gu2 <- school_gu2[1:81,]
+names(school_gu2)[1]<- c("구")
+head(school_gu2)
+
+#최종데이터: school_gu2
+```
+
+
+# 구별 자전거 이용 만족도
+```{r}
+
+
+bike_satisfy <- read.csv('자전거이용만족도.csv')
+
+
+bike_satisfy <- bike_satisfy[30:54,c(3,9)]
+names(bike_satisfy)<- c("구","만족도평균")
+
+bike_satisfy$`만족도평균` <- as.vector(bike_satisfy$만족도평균)
+bike_satisfy$`만족도평균`<-as.numeric(gsub("," , "" , bike_satisfy$`만족도평균`))
+
+
+head(bike_satisfy)
+
+
+# 최종데이터: bike_satisfy
+```
+
+
+
+# 구별 인구수
+```{r}
+
+population.raw<-read.csv("인구수.csv")
+Sys.setlocale("LC_ALL","korean")
+
+
+population.total<-filter(population.raw, 행정동=="소계")
+population.total<-filter(population.total, 구분!="계")
+
+population.del<-select(population.total,-c(기간,행정동,계))
+colnames(population.del)[3:23]<-LETTERS[3:23]
+population.del[,3:23]<-lapply(population.del[,3:23],as.vector)
+population.del[population.del=='-']<-0
+
+
+
+for(i in 3:23){
+  population.del[,i]<-as.numeric(gsub(",","",population.del[,i]))
+}
+rm(i)
+
+attach(population.del)
+population.final<-population.del %>%
+  mutate(`20세미만`= C + D + E + F )
+population.final<-population.final %>%
+  mutate(`20대`= G + H )
+population.final<-population.final %>%
+  mutate(`30대`= I + J )
+population.final<-population.final %>%
+  mutate(`40대`= K + L )
+population.final<-population.final %>%
+  mutate(`50대`= M + N )
+population.final<-population.final %>%
+  mutate(`60대`= O + P )
+population.final<-population.final %>%
+  mutate(`70세 이상`= Q + R + S + T + U + V + W)
+
+
+population.final<-population.final[,-(3:23)]
+
+
+population.k<-filter(population.final, 구분=="한국인")[,-2]
+colnames(population.k)[2:8]<-paste(colnames(population.k)[2:8],'k')
+
+population.f<-filter(population.final, 구분=="외국인")[,-2]
+colnames(population.f)[2:8]<-paste(colnames(population.f)[2:8],'f')
+
+population<-(merge(population.k,population.f))
+names(population)[1] <-c("구")
+head(population)
+
+# 최종 데이터: population
+
+```
+
+
+# 전체 데이터 구 기준으로 합치기
+```{r}
+library(plyr)
+fulldata<-join_all(list(rentUse_gu,stnNum_gu, park_gu, bikeroad_gu, school_gu2, bike_satisfy, population), by='구', type='left')
+View(fulldata)
+
+```
+
+
+
+# 상관관계 파악
+```{r}
+head(fulldata)
+all_numVar <- fulldata[,2:26]
+cor_numVar <- cor(all_numVar, use="pairwise.complete.obs") #correlations of all numeric variables
+
+#sort on decreasing correlations with 이용량
+cor_sorted <- as.matrix(sort(cor_numVar[,'이용량'], decreasing = TRUE))
+
+#select only high corelations
+CorHigh <- names(which(apply(cor_sorted, 1, function(x) abs(x)>0.3)))
+cor_numVar <- cor_numVar[CorHigh, CorHigh]
+
+corrplot.mixed(cor_numVar, tl.col="black", tl.pos = "lt")
+
+```
+
+
+
