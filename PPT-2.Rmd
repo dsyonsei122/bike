@@ -1,0 +1,337 @@
+---
+title: "**따릉따릉 따릉이**"
+subtitle: "⚔<br/>데이터분석을 통한 공영자전거 활성화 방안"
+author: "이다연  김채원"
+output:
+  xaringan::moon_reader:
+    lib_dir: libs
+    css: ["dsXaringan.css", middlebury]
+    nature:
+      highlightStyle: github
+      highlightLines: true
+---
+```{r include=FALSE}
+library(plyr)
+library(corrplot)
+library('psych')
+library(stringr)
+library(tidyverse)
+rentUse_gu<-read.csv("rentUse_gu.csv")
+```
+###구별 이용량 예측 - <span style="font-size: 30px;color:grey">DATA</span>
+
+ - 지하철 역 수
+ - 공원 수
+ - 자전거 도로 수
+ - 학교 수
+ - 자전거 이용 만족도
+ - 인구수(나이, 내/외국인 여부)
+ 
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+
+#역사정보는 2015년 기준입니다.
+stninfo<-read.csv("역주소및전화번호.csv")
+head(stninfo)
+
+# 서울시의 주소, 그리고 역명만 필요합니다.
+
+stninfo<-stninfo[str_detect(stninfo$주소, pattern="서울특별시"),]
+
+stninfo <- stninfo[,c(2,5)]
+head(stninfo)
+
+#regex로 구만 추출합니다.
+stninfo_gu<-data.frame(역명=stninfo$역명, 구명=str_extract(stninfo$주소, pattern="\\S{1,2}구|\\S{3}구")) #왜 NA가 생길까요
+
+stnNum_gu<-stninfo_gu %>% group_by(구명) %>% dplyr::count(name="지하철 역 수") %>% arrange(desc(`지하철 역 수`))
+names(stnNum_gu)[1]<- c("구")
+head(stnNum_gu)
+# 최종데이터: stnNum_gu
+```
+
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+park <- read.csv('공원수.csv')
+Sys.setlocale("LC_ALL", "korean")
+
+
+park_gu<-park[,c(2,3,5)]
+park_gu <- park_gu[2:26,]
+names(park_gu) <- c("구", "공원수","공원총면적")
+head(park_gu)
+
+#vector로 변환
+park_gu$공원수 <- as.numeric(as.vector(park_gu$공원수))
+park_gu$공원총면적 <-as.vector(park_gu$공원총면적)
+park_gu$공원총면적<-as.numeric(gsub(",","",park_gu$공원총면적))
+
+
+head(park_gu)
+
+#최종데이터: park_gu
+
+```
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+
+# 구별 자전거 도로수
+bikeroad <- read.csv('자전거도로.csv')
+Sys.setlocale("LC_ALL", "korean")
+head(bikeroad)
+
+
+bikeroad_gu <- bikeroad[ ,c(3,4,5)]
+bikeroad_gu <-bikeroad_gu[3:27,] 
+names(bikeroad_gu)<- c("구", "도로구간", "도로길이")
+head(bikeroad_gu)
+
+
+#최종데이터: bikeroad_gu
+
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+school <- read.csv("행정구역별 설립별 학교수.csv")
+names(school)
+# 빈값 채우기
+school<-as.data.frame(lapply(school, gsub, pattern = "-", replacement = 0, fixed = TRUE))
+
+school_gu<- school %>% filter(시도=='서울')
+
+school_gu <- school_gu[,c(2,3,5,6,7,8)]
+head(school_gu)
+names(school_gu)<- c( names(school_gu)[1:5], "고등학교") 
+
+#factor로 인식되면 sum을 할 수 없으므로 vector로 바꿔줍니다
+school_gu[,3:6]<-lapply(school_gu[,3:6],as.vector)
+school_gu[,3:6]<-lapply(school_gu[,3:6],as.numeric)
+
+
+
+
+
+school_gu2<-school_gu[1:81,] %>% group_by(행정구역) %>% dplyr::summarise(유치원수=sum(유치원), 초등학교수=sum(초등학교), 중학교수=sum(중학교), 고등학교수=sum(고등학교))
+
+school_gu2 <- school_gu2[1:81,]
+names(school_gu2)[1]<- c("구")
+head(school_gu2)
+
+#최종데이터: school_gu2
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+
+
+bike_satisfy <- read.csv('자전거이용만족도.csv')
+
+
+bike_satisfy <- bike_satisfy[30:54,c(3,9)]
+names(bike_satisfy)<- c("구","만족도평균")
+
+bike_satisfy$`만족도평균` <- as.vector(bike_satisfy$만족도평균)
+bike_satisfy$`만족도평균`<-as.numeric(gsub("," , "" , bike_satisfy$`만족도평균`))
+
+
+head(bike_satisfy)
+
+
+# 최종데이터: bike_satisfy
+```
+
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+
+population.raw<-read.csv("인구수.csv")
+Sys.setlocale("LC_ALL","korean")
+
+
+population.total<-filter(population.raw, 행정동=="소계")
+population.total<-filter(population.total, 구분!="계")
+
+population.del<-select(population.total,-c(기간,행정동,계))
+colnames(population.del)[3:23]<-LETTERS[3:23]
+population.del[,3:23]<-lapply(population.del[,3:23],as.vector)
+population.del[population.del=='-']<-0
+
+
+
+for(i in 3:23){
+  population.del[,i]<-as.numeric(gsub(",","",population.del[,i]))
+}
+rm(i)
+
+attach(population.del)
+population.final<-population.del %>%
+  mutate(`20세미만`= C + D + E + F )
+population.final<-population.final %>%
+  mutate(`20대`= G + H )
+population.final<-population.final %>%
+  mutate(`30대`= I + J )
+population.final<-population.final %>%
+  mutate(`40대`= K + L )
+population.final<-population.final %>%
+  mutate(`50대`= M + N )
+population.final<-population.final %>%
+  mutate(`60대`= O + P )
+population.final<-population.final %>%
+  mutate(`70세 이상`= Q + R + S + T + U + V + W)
+
+
+population.final<-population.final[,-(3:23)]
+
+
+population.k<-filter(population.final, 구분=="한국인")[,-2]
+colnames(population.k)[2:8]<-paste(colnames(population.k)[2:8],'k')
+
+population.f<-filter(population.final, 구분=="외국인")[,-2]
+colnames(population.f)[2:8]<-paste(colnames(population.f)[2:8],'f')
+
+population<-(merge(population.k,population.f))
+names(population)[1] <-c("구")
+head(population)
+
+# 최종 데이터: population
+
+```
+---
+###구별 이용량 예측 - <span style="font-size: 30px;color:grey">DATA</span>
+ - 최종 데이터
+```{r}
+fulldata<-join_all(list(rentUse_gu,stnNum_gu, park_gu, bikeroad_gu, school_gu2, bike_satisfy, population), by='구', type='left')
+head(fulldata)
+```
+
+
+
+---
+###구별 이용량 예측 - <span style="font-size: 30px;color:grey">전처리</span>
+ - Y 변수 변환
+```{r}
+skew(fulldata$`이용량`)
+skew(log(fulldata$`이용량`))
+# log화된 데이터의 skewness가 더 적습니다.
+# skewness를 줄여주기 위해 Y변수를 log변환시켜준다.
+
+```
+---
+```{r}
+
+# log 변환 이전 Y변수 확인
+qqnorm(fulldata$`이용량`)
+qqline(fulldata$`이용량`)
+```
+---
+```{r}
+qqnorm(log(fulldata$`이용량`))
+qqline(log(fulldata$`이용량`))
+
+```
+---
+###구별 이용량 예측 - <span style="font-size: 30px;color:grey">전처리</span>
+ - X 변수 변환
+```{r}
+# X 변수 전처리
+
+# log 변환을 통한 Skewness 보정과 normalize를 한꺼번에 실행하였습니다.
+# skewness가 0.8을 넘는 것은 log+1 변환으로 skewness를 줄여 주었습니다.
+
+DFnumeric <- fulldata[,3:26]
+for(i in 1:ncol(DFnumeric)){
+  if (abs(skew(DFnumeric[,i]))>0.8){
+    DFnumeric[,i] <- log(DFnumeric[,i] +1)
+  }
+}
+```
+---
+  
+###구별 이용량 예측 - <span style="font-size: 30px;color:grey">전처리</span>
+ - centering과 scaling을 적용해주었습니다.
+
+```{r message=FALSE, warning=FALSE, include=FALSE, paged.print=FALSE}
+library(caret)
+```
+```{r}
+PreNum <- preProcess(DFnumeric, method=c("center", "scale"))
+print(PreNum)
+
+DFnorm <- predict(PreNum, DFnumeric)
+dim(DFnorm)
+
+```
+
+---
+
+###구별 이용량 예측 - <span style="font-size: 30px;color:grey">전처리</span>
+
+```{r}
+# Y 변수의 log 변환
+fulldata_log <- fulldata
+fulldata_log$이용량 <- log(fulldata_log$이용량)
+
+head(fulldata_log)
+
+
+fulldata_log[,3:26]<- DFnorm
+
+
+head(fulldata_log)
+```
+
+---
+###구별 이용량 예측 - <span style="font-size: 30px;color:grey">분석</span>
+ - 회귀분석
+```{r}
+# 회귀
+lm1 <- lm(`이용량`~`도로구간`+`지하철 역 수`+`공원수`+`30대 k`, data=fulldata_log)
+summary(lm1)$coef
+```
+---
+###구별 이용량 예측 - <span style="font-size: 30px;color:grey">분석</span>
+ - 회귀분석
+
+```{r}
+step(lm1) # AIC를 최소로 하는 두가지의 변수만 택해서 최종모델을 만든다
+lm2 <- lm(`이용량`~`지하철 역 수`+`도로구간`, data=fulldata_log)
+summary(lm2)
+```
+---
+###구별 이용량 예측 - <span style="font-size: 30px;color:grey">분석</span>
+ - 회귀분석
+
+```{r}
+# 예측모형을 돌려봅니다
+library(stats)
+pred2<-predict.lm(object=lm2, newdata=fulldata_log[,-2], interval="confidence" )
+pred1<-predict.lm(object=lm1, newdata=fulldata_log[,-2], interval="confidence" )
+#Y hat 값이 나왔습니다. log 변환 시킨 값이므로 다시 되돌려줍니다
+```
+---
+###구별 이용량 예측 - <span style="font-size: 30px;color:grey">분석</span>
+ - 각 구의 예상 2년 따릉이 수요량
+```{r}
+newpred1<-as.data.frame(cbind(fulldata[,1:2],exp(pred1)))
+newpred2<-as.data.frame(cbind(fulldata[,1:2],exp(pred2)))
+head(newpred2,7)
+```
+---
+###구별 이용량 예측 - <span style="font-size: 30px;color:grey">분석</span>
+ - 지하철 역 수가 8개이고, 도로구간이 8000인 가상의 구의 연간 따릉이 수요를 예측해본다면
+
+```{r}
+
+newdata<-fulldata_log[1,]
+newdata$`지하철 역 수` <- log(8)
+newdata$`도로구간` <- log(8000)
+
+exp(predict( lm2, newdata))
+
+
+#9290342대입니다.
+
+
+```
